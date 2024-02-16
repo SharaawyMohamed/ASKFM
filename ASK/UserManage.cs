@@ -1,26 +1,33 @@
-﻿using Microsoft.VisualBasic.FileIO;
+using Microsoft.VisualBasic.FileIO;
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Data.SqlClient;
 using System.Linq;
 using System.Reflection.PortableExecutable;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml.Serialization;
 
 namespace ASK
 {
 
-    internal static class UserManage
+    internal class UserManage
     {
+
         static Dictionary<int, User> AllUsers = new Dictionary<int, User>();
+        static List<Question> Questions = new List<Question>();
+        static Dictionary<int, Question> Parent = new Dictionary<int, Question>();
+        static Dictionary<int, List<Question>> Threads = new Dictionary<int, List<Question>>();
         static UserManage()
         {
             #region All Users
-            string Query = "Select * from [User]";
+            string sql = "Select * from [User]";
             SqlConnection con = new SqlConnection(DB.Source);
             con.Open();
-            SqlCommand cmd = new SqlCommand(Query, con);
+            SqlCommand cmd = new SqlCommand(sql, con);
             SqlDataReader reader = cmd.ExecuteReader();
             while (reader.Read())
             {
@@ -38,325 +45,22 @@ namespace ASK
                     };
             }
             reader.Close();
-            con.Close();
+            cmd.Parameters.Clear();
             #endregion
+            #region AllQuestions And Thread
 
-        }
-
-        public static void PrintToMe(User user)
-        {
-            Dictionary<int, Question> ParentQuestions = new Dictionary<int, Question>();
-            Dictionary<int, List<Question>> ThreadsQuestions = new Dictionary<int, List<Question>>();
-
-            using (SqlConnection con = new SqlConnection(DB.Source))
-            {
-                con.Open();
-                string sql = "Select * FROM Question WHERE Thread IS NULL AND ToId = @Id";//select all parent questions which asked to me
-                using (SqlCommand cmd = new SqlCommand(sql, con))// read all questions which asked to me
-                {
-                    cmd.Parameters.Add(new SqlParameter("@Id", user.Id));
-                    SqlDataReader reader = cmd.ExecuteReader();
-                    while (reader.Read())
-                    {
-                        ParentQuestions[(int)reader["Id"]] = new Question()// add parent question which asked to me  in parent dictionary
-                        {
-                            QId = (int)reader["Id"],
-                            Body = (string)reader["Body"],
-                            Answer = reader["Answer"] == DBNull.Value ? "" : (string)reader["Answer"],//can be null
-                            FromId = (int)reader["FromId"],
-                            ToId = (int)reader["ToId"]
-                        };
-                    }
-                    reader.Close();
-                }
-
-                sql = "SELECT * FROM Question WHERE Thread IS NOT NULL";
-                using (SqlCommand cmd = new SqlCommand(sql, con))
-                {
-                    SqlDataReader reader = cmd.ExecuteReader();
-                    while (reader.Read())
-                    {
-                        int ThrID = (int)reader["Thread"];
-                        if (!ThreadsQuestions.ContainsKey(ThrID))
-                        {
-                            ThreadsQuestions[ThrID] = new List<Question>();
-                        }
-
-                        ThreadsQuestions[ThrID].Add(new Question()
-                        {
-                            QId = (int)reader["Id"],
-                            Body = (string)reader["Body"],
-                            Answer = reader["Answer"] == DBNull.Value ? "" : (string)reader["Answer"],
-                            FromId = (int)reader["FromId"],
-                            ToId = (int)reader["ToId"]
-                        });
-                    }
-                }
-            }
-            if (ParentQuestions.Count() == 0)
-            {
-                Console.WriteLine("You Don't Asked Qustion Until Now\n");
-                return;
-            }
-
-            foreach (var P in ParentQuestions)
-            {
-                Console.WriteLine($"Question ID:({P.Value.QId}) From User({P.Value.FromId})   Question: {P.Value.Body}");
-                string answer = !string.IsNullOrEmpty(P.Value.Answer) ? $"Answer: {P.Value.Answer}" : "Answer: Not Answerd Question";
-                Console.WriteLine(answer);
-
-                if (!ThreadsQuestions.ContainsKey(P.Key))// if no threads on this question
-                {
-                    continue;
-                }
-                List<Question> Threads = ThreadsQuestions[P.Key];
-                foreach (var i in Threads)
-                {
-                    // if (i.) continue;// if i aske question on may parent question        
-                    Console.WriteLine($"Thread: Question ID({i.QId}) from User({i.FromId})    Question: {i.Body}");
-                    string threadAnswer = !string.IsNullOrEmpty(i.Answer) ? $"Thread: Answer: {i.Answer}" : "Answer: Nont Answered Question";
-                    Console.WriteLine(threadAnswer);
-                }
-
-            }
-
-        }
-        public static void PrintQFromMe(User user)
-        {
-            List<Question> QQ = new List<Question>();
-            SqlConnection con = new SqlConnection(DB.Source);
-            con.Open();
-            string sql = "select * from Question where FromId = @id";
-            SqlCommand cmd = new SqlCommand(sql, con);
-            cmd.Parameters.Add(new SqlParameter("@Id", user.Id));
-            SqlDataReader reader = cmd.ExecuteReader();
+            sql = "Select * from Question where Thread is null";
+            cmd = new SqlCommand(sql, con);
+            reader = cmd.ExecuteReader();
             while (reader.Read())
             {
-                QQ.Add(new Question()
+                Parent[(int)reader["Id"]] = new Question()
                 {
                     QId = (int)reader["Id"],
                     Body = (string)reader["Body"],
                     Answer = reader["Answer"] == DBNull.Value ? "" : (string)reader["Answer"],
                     FromId = (int)reader["FromId"],
                     ToId = (int)reader["ToId"]
-                });
-
-            }
-            reader.Close();
-            cmd.Parameters.Clear();
-            if (QQ.Count() == 0)
-            {
-                Console.WriteLine("You Don't Ask Any Question Until Now\n");
-                return;
-            }
-            foreach (var i in QQ)
-            {
-
-                string Ans = string.IsNullOrEmpty(i.Answer) ? "Answer: Not Answered Question" : $"Answer: {i.Answer}";
-                string Anon = AllUsers[i.ToId].Anonymous == 1 ? "" : " !AQ";
-                Console.WriteLine($"Question ID({i.QId}){Anon} To User ID({i.ToId})      Question : {i.Body}");
-                Console.WriteLine(Ans);
-            }
-            Console.WriteLine();
-        }
-        public static void AnswerQ(User user)
-        {
-            Console.Write("Enter Question ID or -1 to Cancel : ");
-
-            ///////////////////////// 
-            int count = 0;
-            int id;
-            string query = "SELECT COUNT(*) FROM Question WHERE ID = @ID";
-            do
-            {
-
-                while (!int.TryParse(Console.ReadLine(), out id) || id < -1)
-                {
-                    Console.WriteLine();
-                    Console.Write("Invalid value Tray Again : ");
-                }
-                if (id == -1)
-                {
-                    return;
-                }
-                SqlConnection connection = new SqlConnection(DB.Source);
-                SqlCommand command = new SqlCommand(query, connection);
-                connection.Open();
-                command.Parameters.AddWithValue("@ID", id);
-                count = (int)command.ExecuteScalar();
-                if (count == 0)
-                {
-                    Console.WriteLine($"Not Found Question ID Try Again :{id}");
-                    Console.Write("Enter Question ID Again or -1 to cancle: ");
-                    if (id == -1)
-                    {
-
-                        Console.WriteLine();
-                        return;
-                    }
-                }
-                connection.Close();
-            } while (count == 0);
-
-            //////////////////////////////////
-
-            string Q = "Select count(*) from Question Where ToID=@UserID and Id = @QuestID";
-            SqlConnection conn = new SqlConnection(DB.Source);
-            SqlCommand comm = new SqlCommand(Q, conn);
-            conn.Open();
-            comm.Parameters.AddWithValue("@UserID", user.Id);// user id
-            comm.Parameters.AddWithValue("@QuestID", id);//question id
-            count = (int)comm.ExecuteScalar();
-            conn.Close();
-            if (count == 0)
-            {
-                Console.WriteLine("You Can't Answer This Question \n");
-                return;
-            }
-            /////////////////////////
-            Console.WriteLine("Enter Answere : ");
-            string Ans;
-            do
-            {
-                Ans = Console.ReadLine();
-                if (string.IsNullOrEmpty(Ans))
-                {
-                    Console.WriteLine("Ivalid Answer Try Again: ");
-                }
-            } while (string.IsNullOrEmpty(Ans));
-
-            SqlConnection con = new SqlConnection(DB.Source);
-            con.Open();
-            string sql = "Update [Question] set Answer=@ans where Id=@id ";
-            SqlCommand cmd = new SqlCommand(sql, con);
-            cmd.Parameters.Add(new SqlParameter("@id", id));
-            cmd.Parameters.Add(new SqlParameter("@ans", Ans));
-            cmd.ExecuteNonQuery();
-            con.Close();
-            //cmd.Parameters.Clear()
-            Console.WriteLine();
-        }
-        public static void Delete()
-        {
-            Console.WriteLine("Enter Question ID or -1 to Cancel");
-            int id;
-            while (!int.TryParse(Console.ReadLine(), out id))
-            {
-                Console.WriteLine("Invalid ID Try Again");
-            }
-            if (id == -1) return;
-            string sql = "Delete from Question where @id=ID";
-            SqlConnection con = new SqlConnection(DB.Source);
-            con.Open();
-            SqlCommand cmd = new SqlCommand(sql, con);
-            cmd.Parameters.Add(new SqlParameter("@id", id));
-            cmd.ExecuteNonQuery();
-            con.Close();
-        }
-        public static void AskQ(User user)
-        {
-
-            Console.WriteLine("Enter user Id or -1 to cancel:");
-            int id;// user id
-            while (!int.TryParse(Console.ReadLine(), out id))
-            {
-                Console.WriteLine("Invalid ID Try Again");
-            }
-            if (id == -1) return;
-            if (!AllUsers.ContainsKey(id))
-            {
-                Console.WriteLine("Not Found User !!");
-                return;
-            }
-            if (AllUsers[id].Anonymous == 0)
-            {
-                Console.WriteLine("Note:Anonymous Questions are not allowed for this user");
-            }
-
-            Console.WriteLine("For thread question enter question id or -1 To new question: ");
-
-            int qid;// question id
-            while (!int.TryParse(Console.ReadLine(), out qid))
-            {
-                Console.WriteLine("Invalid ID Try Again:");
-            }
-
-            if (qid != -1)
-            {
-                string Q = "Select count(*) from Question Where  Id = @QuestID";
-                SqlConnection conn = new SqlConnection(DB.Source);
-                SqlCommand comm = new SqlCommand(Q, conn);
-                conn.Open();
-                comm.Parameters.AddWithValue("@QuestID", qid);//question id
-                int count = (int)comm.ExecuteScalar();
-                conn.Close();
-                if (count == 0)
-                {
-                    Console.WriteLine("You Can't Thread On Not Found Question \n");
-                    return;
-                }
-            }
-            Console.WriteLine("Enter Body Quetion:");
-            string quest = Console.ReadLine();
-            if (qid == -1)
-            {
-                string sql = "INSERT INTO Question([Body], [FromId], [ToId]) VALUES (@body, @from, @to)";
-                SqlConnection con = new SqlConnection(DB.Source);
-                con.Open();
-                SqlCommand cmd = new SqlCommand(sql, con);
-                cmd.Parameters.Add(new SqlParameter("@body", quest));
-                cmd.Parameters.Add(new SqlParameter("@from", user.Id));
-                cmd.Parameters.Add(new SqlParameter("@to", id));
-                cmd.ExecuteNonQuery();
-                con.Close();
-
-            }
-            else
-            {
-                string sql = "INSERT INTO Question(Body, [FromId], [ToId],[Thread]) VALUES (@body, @from, @to,@thread)";
-                SqlConnection con = new SqlConnection(DB.Source);
-                con.Open();
-                SqlCommand cmd = new SqlCommand(sql, con);
-                cmd.Parameters.Add(new SqlParameter("@body", quest));
-                cmd.Parameters.Add(new SqlParameter("@from", user.Id));
-                cmd.Parameters.Add(new SqlParameter("@to", id));
-                cmd.Parameters.Add(new SqlParameter("@thread", qid));
-                cmd.ExecuteNonQuery();
-                con.Close();
-            }
-
-        }
-        public static void Users()
-        {
-            foreach (var i in AllUsers)
-            {
-                Console.WriteLine($"ID: {i.Value.Id} , Name: {i.Value.Name}");
-            }
-        }
-        public static void Feed()
-        {
-            Dictionary<int, Question> Parent = new Dictionary<int, Question>();
-            Dictionary<int, List<Question>> Threads = new Dictionary<int, List<Question>>();
-
-            SqlConnection con = new SqlConnection(DB.Source);
-            con.Open();
-            string sql = "Select * from Question where Thread is null";
-            SqlCommand cmd = new SqlCommand(sql, con);
-            SqlDataReader reader = cmd.ExecuteReader();
-            while (reader.Read())
-            {
-                int qId = (int)reader["Id"];
-                string body = (string)reader["Body"];
-                string answer = reader["Answer"] == DBNull.Value ? "" : (string)reader["Answer"];
-                int fromId = (int)reader["FromId"];
-                int toId = (int)reader["ToId"];
-                Parent[qId] = new Question()
-                {
-                    QId = qId,
-                    Body = body,
-                    Answer = answer,
-                    FromId = fromId,
-                    ToId = toId
                 };//System.InvalidCastException: 'Unable to cast object of type 'System.DBNull' to type 'System.String'.'
             }
             reader.Close();
@@ -383,35 +87,249 @@ namespace ASK
                 });
             }
             reader.Close();
-            con.Close();
-            foreach (var parent in Parent)
+            cmd.Parameters.Clear();
+            #endregion
+            #region alll Questions
+            sql = "select * from Question";
+            cmd = new SqlCommand(sql, con);
+            reader = cmd.ExecuteReader();
+            while (reader.Read())
             {
-                Console.WriteLine($"Question ID({parent.Key}):  From User ID({parent.Value.FromId})     Question: {parent.Value.Body} "); // from & to
-                Console.WriteLine($"ID ({parent.Key}) A. {parent.Value.Answer ?? "N/A"} ?");
+                Questions.Add(
+                   new Question
+                   {
+                       QId = (int)reader["Id"],
+                       Body = (string)reader["Body"],
+                       ToId = (int)reader["ToId"],
+                       FromId = (int)reader["FromId"],
+                       Answer = reader["Answer"] == DBNull.Value ? "" : (string)reader["Answer"],
+                       Thread = reader["Thread"] == DBNull.Value ? -1 : (int)reader["Thread"]
+                   }
+                );
+            }
+            con.Close();
+            #endregion
 
-                // Check if the key exists in the Threads dictionary
-                if (!Threads.ContainsKey(parent.Key))
+            foreach (Question i in Questions)
+            {
+                if (i.Thread == -1)
                 {
-                    Console.WriteLine("No threads found for this question.");
-                    return;
+                    Parent[i.QId] = i;
                 }
-                List<Question> list = Threads[parent.Key];
-                foreach (var Thrd in list)
+                else
                 {
-                    string Ans = string.IsNullOrEmpty(Thrd.Answer) ? "No Answer For this Question" : Thrd.Answer;
-                    Console.WriteLine($"Thread :   Question:  {Thrd.Body}");
-                    Console.WriteLine($"Thread :   Answer:   {Ans}");
+                    if (!Threads.ContainsKey(i.Thread))
+                    {
+                        Threads[i.Thread] = new List<Question>();
+                    }
+                    Threads[i.Thread].Add(i);
                 }
+            }
+        }
 
+        public static void PrintToMe(int id)
+        {
+            var pr = Parent.Where(p => p.Value.ToId == id && p.Value.Thread == -1);// To Return all Questions To me
+            bool ok = false;                                                                     // var thr = Threads.Where(t => pr.Any(p => p.Key == t.Key));
+            List<Question> all = new List<Question>();
+            foreach (var P in pr)
+            {
+                ok = true;
+                QuestionManage.PrintParentQ(P.Value);
+                all.Add(P.Value);
+                if (!Threads.ContainsKey(P.Key))
+                {
+                    continue;
+                }
+                List<Question> THR = new List<Question>();
+                THR = Threads[P.Key];
+                foreach (Question i in THR)
+                {
+                    if (i.ToId == id)
+                    {
+                        QuestionManage.PrintThreadQ(i);
+                        all.Add(i);
+                    }
+                }
+            }
+            var stay = Questions.Except(all).Where(p => p.ToId == id);
+            foreach (var i in stay)
+            {
+                ok = true;
+                QuestionManage.PrintParentQ(i);
+            }
+            if (!ok)
+            {
+                Console.WriteLine("You haven't been asked any question");
+            }
+        }// Done
+        public static void PrintQFromMe(int id)
+        {
+            bool ok = false;
+            var pr = Parent.Where(p => p.Value.FromId == id && p.Value.Thread == -1);// To Return all Questions To me
+            List<Question> all = new List<Question>();
+            foreach (var P in pr)
+            {
+                ok = true;
+                QuestionManage.PrintParentQ(P.Value, Anonymo: AllUsers[P.Value.ToId].Anonymous, FromMe: true);
+
+                all.Add(P.Value);
+                if (!Threads.ContainsKey(P.Key))
+                {
+                    continue;
+                }
+                var THR = Threads[P.Key];
+                foreach (var i in THR)
+                {
+                    if (i.FromId == id)
+                    {
+                        QuestionManage.PrintThreadQ(i, Anonymo: AllUsers[i.ToId].Anonymous, FromMe: true);
+                        all.Add(i);
+                    }
+                }
+            }
+            var stay = Questions.Except(all).Where(p => p.FromId == id);
+            foreach (var i in stay)
+            {
+                ok = true;
+                QuestionManage.PrintParentQ(i, Anonymo: AllUsers[id].Anonymous, FromMe: true);
+            }
+            if (!ok)
+            {
+                Console.WriteLine("You didn't ask any questions.");
+            }
+        }// Done
+        public static void AnswerQ(User user)
+        {
+            int id;
+            Console.Write("Enter Question ID or -1 to Cancel : ");
+            while (!int.TryParse(Console.ReadLine(), out id))
+            {
+                Console.WriteLine("Invalid ID Try Again: ");
+            }
+            if (id == -1) return;// to cancle
+
+            bool found = Questions.Any(p => p.QId == id);//continue
+            if (!found)
+            {
+                Console.WriteLine("Not Found Question ");
+                return;
+            }
+            bool Answerd = Questions.Any(p => p.QId == id && !string.IsNullOrEmpty(p.Answer));
+            if (Answerd)
+            {
+                Console.WriteLine("Note: this  question is Answerd, press -1 to cancle or any 'key' to update Answer");
+                string contin = Console.ReadLine();
+                if (contin == "-1") return;
+            }
+            QuestionManage.AnswerQ(id);
+        }// Done
+        public static void Delete(int userid)
+        {
+            Console.WriteLine("Enter Question ID or -1 to Cancel");
+            int id;
+            while (!int.TryParse(Console.ReadLine(), out id))
+            {
+                Console.WriteLine("Invalid ID Try Again");
             }
 
+            bool found = Questions.Any(p => p.QId == id);
+            bool can = Questions.Any(p => p.QId == id && p.FromId == userid);
+            if (!found)
+            {
+                Console.WriteLine("This Question Not Found.");
+                return;
+            }
+            if (!can)
+            {
+                Console.WriteLine("You Can't Delete a Question For Someone Else.");
+                return;
+            }
+            QuestionManage.Delete(id);
+        }// stay delete multilevel thread
+        public static void AskQ(User user)
+        {
+            Console.WriteLine("Enter user Id or -1 to cancel:");
+            int id;// user id
+            while (!int.TryParse(Console.ReadLine(), out id))
+            {
+                Console.WriteLine("Invalid ID Try Again");
+            }
+            if (id == -1) return;
+
+            if (!AllUsers.ContainsKey(id))
+            {
+                Console.WriteLine("Not Found User !!");
+                return;
+            }
+            if (AllUsers[id].Anonymous == 0)
+            {
+                Console.WriteLine("Note:Anonymous Questions are not allowed for this user");
+            }
+
+            Console.WriteLine("For thread question enter question id or -1 To new question: ");
+
+            int qid;// question id
+            while (!int.TryParse(Console.ReadLine(), out qid))
+            {
+                Console.WriteLine("Invalid ID Try Again:");
+            }
+
+            Console.WriteLine("Enter Body Quetion:");
+            string quest = Console.ReadLine();
+            do
+            {
+                if (!string.IsNullOrEmpty(quest))
+                {
+                    break;
+                }
+                Console.WriteLine("Invalid Question Tray Again:");
+                quest = Console.ReadLine();
+            } while (true);
+
+            if (qid == -1)
+                QuestionManage.AskQ(quest, user.Id, id);
+            else
+                QuestionManage.AskQ(quest, user.Id, id, qid);
+
+        }// not done
+        public static void Users()
+        {
+            foreach (var i in AllUsers)
+            {
+                Console.WriteLine($"ID: {i.Value.Id} , Name: {i.Value.Name}");
+            }
+        }// Done
+        public static void Feed()
+        {
+            foreach (var parent in Parent)
+            {
+                QuestionManage.PrintParentQ(parent.Value);// print parent question
+
+                if (!Threads.ContainsKey(parent.Key))// if question Don't have any Threads
+                {
+                    continue;
+                }
+                List<Question> list = Threads[parent.Key];
+
+                foreach (var Thrd in list)
+                {
+                    if (string.IsNullOrEmpty(Thrd.Answer))// if question have no Answer 
+                    {
+                        continue;
+                    }
+
+                    QuestionManage.PrintThreadQ(Thrd);
+                }
+                Console.WriteLine();
+            }
             Console.WriteLine();
-        }
+        }// Done
         public static void Logout()
         {
             Environment.Exit(0);
 
-        }
+        }// Done
 
 
     }
