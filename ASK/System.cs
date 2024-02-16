@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
 using System.Linq;
@@ -37,9 +37,9 @@ namespace ASK
                 SqlCommand cmd = new SqlCommand(sql, con);
                 do
                 {
-                    Console.WriteLine("Enter user name:");
+                    Console.Write("Enter UserName: ");
                     string username = Console.ReadLine();
-                    Console.WriteLine("Enter Password:");
+                    Console.Write("Enter Password: ");
                     string password = Console.ReadLine();
 
                     cmd.Parameters.Clear();
@@ -63,42 +63,41 @@ namespace ASK
             }
             else
             {
-                Console.Write("Enter you Name:");
+                Console.Write("Enter you Name: ");
                 user.Name = Console.ReadLine();
                 while (string.IsNullOrEmpty(user.Name))
                 {
-                    Console.WriteLine("Ivalid value Try again :");
+                    Console.Write("Ivalid value Try again :");
                     user.Name = Console.ReadLine();
 
                 }
 
-                Console.Write("Enter you Email:");
+                Console.Write("Enter you Email: ");
                 user.Email = Console.ReadLine();
                 while (string.IsNullOrEmpty(user.Email))
                 {
-                    Console.WriteLine("Ivalid value Try again :");
+                    Console.Write("Ivalid value Try again :");
                     user.Email = Console.ReadLine();
 
                 }
 
-                Console.Write("Enter you UserName:");
+                Console.Write("Enter Your UserName:");
                 user.UserName = Console.ReadLine();
                 while (string.IsNullOrEmpty(user.UserName))
                 {
-                    Console.WriteLine("Ivalid value Try again :");
+                    Console.WriteLine("Ivalid Value Try again :");
                     user.UserName = Console.ReadLine();
                 }
 
-                Console.Write("Enter you Password:");
+                Console.Write("Enter Your Password:");
                 user.Password = Console.ReadLine();
                 while (string.IsNullOrEmpty(user.Password))
                 {
-                    Console.WriteLine("Ivalid value Try again :");
+                    Console.WriteLine("Ivalid Value Try again :");
                     user.Password = Console.ReadLine();
 
                 }
-
-                Console.Write("Enter you Anonymous type(1 to Accept and 0 To deny:");
+                Console.Write("Are You Accept Anonymous Question? (1 to Accept and 0 To deny):");
                 int an;
                 while (!int.TryParse(Console.ReadLine(), out an) || (an > 1 || an < 0))
                 {
@@ -117,12 +116,14 @@ namespace ASK
                 cmd.ExecuteNonQuery();
                 con.Close();
             }
+            Console.WriteLine($"\nWelcome, {user.Name}\n");
         }
         public void StartAsk()
         {
+          //  UserManage usermanage = new UserManage();
             #region System Begin
-            Console.WriteLine("Enter Mumber Menu");
-            Console.WriteLine(
+            Console.WriteLine("Enter Mumber From Minue:");
+            Console.WriteLine("\n"+
             "1: Print Question To Me.\n" +              
             "2: Print Question From Me.\n" +            
             "3: Answer Question.\n" +                   
@@ -140,11 +141,11 @@ namespace ASK
             }
             if (ON == 1)
             {
-                UserManage.PrintToMe(user);
+                UserManage.PrintToMe(user.Id);
             }
             else if (ON == 2)
             {
-                UserManage.PrintQFromMe(user);
+                UserManage.PrintQFromMe(user.Id);
             }
             else if (ON == 3)
             {
@@ -152,7 +153,7 @@ namespace ASK
             }
             else if (ON == 4)
             {
-                UserManage.Delete();
+                UserManage.Delete(user.Id);
             }
             else if (ON == 5)
             {
